@@ -1,1 +1,7 @@
 ﻿
+.venv/
+__pycache__/
+logs/
+data/
+*.pgn
+*.log

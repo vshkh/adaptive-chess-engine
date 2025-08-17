@@ -10,9 +10,10 @@ packaging==25.0
 pandas==2.3.1
 pillow==11.3.0
 pyparsing==3.2.3
-python-chess==1.999
+python-chess>=1.999
 python-dateutil==2.9.0.post0
 pytz==2025.2
+rich>=13.7
 scikit-learn==1.7.1
 scipy==1.16.1
 six==1.17.0
