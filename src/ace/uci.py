@@ -13,6 +13,7 @@ import chess
 import chess.engine
 from .config import CFG
 from .logging_setup import setup_logging
+from typing import List, Tuple, Optional
 
 log = setup_logging("ace.uci")
 
@@ -25,6 +26,17 @@ class EvalResult:
     depth: int
     pv: list[chess.Move]
     info_raw: dict
+
+@dataclass
+class Candidate:
+    move: chess.Move
+    score_cp: Optional[int]       # centipawns, side-to-move POV
+    score_mate: Optional[int]
+    depth: int
+    pv: list[chess.Move]
+    is_capture: bool
+    gives_check: bool
+    is_castle: bool
 
 class Engine:
     def __init__(self, exe_path: str | None = None):
@@ -45,15 +57,19 @@ class Engine:
             except Exception as e:
                 log.warning("Could not set option %s=%s (%s)", k, v, e)
 
+    def _make_limit(self, depth: int | None, movetime_ms: int | None):
+        # python-chess uses "time" (seconds), not "movetime"
+        t = (movetime_ms / 1000.0) if movetime_ms else None
+        return chess.engine.Limit(depth=depth or CFG.default_depth, time=t)
+
+
     def analyse(self, board: chess.Board, depth: int | None = None, movetime_ms: int | None = None) -> EvalResult:
         secs = (movetime_ms or CFG.movetime_ms)
         if secs:
             secs = secs / 1000.0  # convert ms → seconds
 
-        limit = chess.engine.Limit(
-            depth=depth or CFG.default_depth,
-            time=secs
-        )
+        limit = self._make_limit(depth, movetime_ms or CFG.movetime_ms)
+
         info = self._engine.analyse(board, limit, multipv=1)
         # Handle both dict and list return types
         if isinstance(info, list):
@@ -89,6 +105,47 @@ class Engine:
             pv=pv,
             info_raw=dict(info)
         )
+    
+    def analyse_candidates(self, board: chess.Board, depth: int | None = None, k: int = 4) -> List[Candidate]:
+        """Return up to k candidate moves with evals and simple features."""
+        limit = self._make_limit(depth, CFG.movetime_ms)
+        infos = self._engine.analyse(board, limit, multipv=max(1, k))
+
+        # python-chess may return dict or list
+        if isinstance(infos, dict):
+            infos = [infos]
+
+        # Ensure sorted by multipv (1 = best)
+        def get_mpv(d): return d.get("multipv", 1)
+        infos = sorted(infos, key=get_mpv)
+
+        cands: List[Candidate] = []
+        for info in infos:
+            pv = info.get("pv", [])
+            if not pv:
+                # Fallback: ask engine to play if pv missing
+                best = self._engine.play(board, chess.engine.Limit(depth=limit.depth, movetime=limit.movetime)).move
+                pv = [best]
+            move = pv[0]
+
+            score = info.get("score")
+            score_cp = score.white().score(mate_score=100000) if score is not None else None
+            score_mate = score.white().mate() if score is not None else None
+            if board.turn is chess.BLACK:
+                if score_cp is not None: score_cp = -score_cp
+                if score_mate is not None: score_mate = -score_mate
+
+            cands.append(Candidate(
+                move=move,
+                score_cp=score_cp,
+                score_mate=score_mate,
+                depth=info.get("depth", limit.depth or 0),
+                pv=pv,
+                is_capture=board.is_capture(move),
+                gives_check=board.gives_check(move),
+                is_castle=board.is_castling(move),
+            ))
+        return cands
 
     def play_best(self, board: chess.Board, depth: int | None = None) -> chess.Move:
         return self.analyse(board, depth=depth).best_move
