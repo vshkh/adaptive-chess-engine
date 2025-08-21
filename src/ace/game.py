@@ -53,25 +53,6 @@ SCORERS = {
 def _format_pv(pv: list[chess.Move], limit: int = 6) -> str:
     return " ".join(str(m) for m in pv[:limit])
 
-def _annotate_node(node: chess.pgn.GameNode, meta: dict, features: str):
-    """Adds a formatted comment to the PGN node based on move metadata."""
-    parts = []
-    if (eval_cp := meta.get("chosen_cp")) is not None:
-        parts.append(f"eval_cp={eval_cp}")
-    if (style := meta.get("style")) is not None:
-        parts.append(f"style={style}")
-    if "best" in meta:
-        parts.append(f"best={meta['best']}({meta.get('best_cp')})")
-    if (chosen := meta.get("chosen")) is not None:
-        parts.append(f"chosen={chosen}({meta.get('chosen_cp')})")
-    if (delta_cp := meta.get("delta_cp")) is not None:
-        parts.append(f"delta_cp={delta_cp}")
-    
-    parts.append(features)
-    
-    node.comment = " | ".join(str(p) for p in parts if p is not None)
-
-
 def play_self(depth_white: int = 12, depth_black: int = 12, max_moves: int = 300,
               style_white: str = "pure", style_black: str = "pure") -> str:
     """Play a game with optional personalities; returns PGN filepath."""
@@ -84,41 +65,55 @@ def play_self(depth_white: int = 12, depth_black: int = 12, max_moves: int = 300
 
     node = game
     with Engine() as eng_w, Engine() as eng_b:
-        for _ in range(max_moves):
-            if board.is_game_over(claim_draw=True):
-                break
+        ply = 0  # <-- you were missing this
+        while not board.is_game_over(claim_draw=True) and ply < max_moves:
+            if board.turn == chess.WHITE:
+                eng, depth, style = eng_w, depth_white, style_white
+            else:
+                eng, depth, style = eng_b, depth_black, style_black
 
-            is_white_turn = board.turn == chess.WHITE
-            eng = eng_w if is_white_turn else eng_b
-            depth = depth_white if is_white_turn else depth_black
-            style = style_white if is_white_turn else style_black
-
+            # choose move + metadata (has chosen_cp/best_cp)
             move, meta = choose_move_with_style(board, eng, depth=depth, style=style, k=4)
 
-            # Safe fallback if something went sideways
-            legal_moves = list(board.legal_moves)
-            if move not in legal_moves:
-                if not legal_moves:
-                    break  # No legal moves, game is over
-                log.warning(f"Move {move} from style '{style}' was illegal. Choosing random move.")
-                move = random.choice(legal_moves)
+            # safe fallback if something went sideways
+            legal = list(board.legal_moves)
+            if move not in legal:
+                if not legal:  # terminal (checkmate/stalemate)
+                    break
+                move = random.choice(legal)
 
-            # Compute features for the move *before* it's played
+            # compute features for THIS final move
             is_cap = board.is_capture(move)
             is_chk = board.gives_check(move)
             is_cas = board.is_castling(move)
-            features = f"feat={'C' if is_cap else '-'}{'K' if is_chk else '-'}{'O' if is_cas else '-'}"
 
-            # Push and annotate the move node
+            # snapshot the pre-move position for feature checks
+            pre_board = board.copy(stack=False)
+
+            # push and annotate the move node once
             board.push(move)
             node = node.add_variation(move)
-            _annotate_node(node, meta, features)
 
-    # Stamp result and save
-    game.headers["Result"] = board.result(claim_draw=True)
-    out_path = save_pgn(game, name_prefix="tier2_selfplay")
-    log.info(f"Finished self-play: result={game.headers['Result']} pgn={out_path}")
-    return str(out_path)
+            eval_cp = meta.get("chosen_cp")
+            parts = []
+            if eval_cp is not None:
+                parts.append(f"eval_cp={eval_cp}")
+            parts.append(f"style={meta.get('style')}")
+            if "best" in meta:
+                parts.append(f"best={meta['best']}({meta.get('best_cp')})")
+            parts.append(f"chosen={meta.get('chosen')}({meta.get('chosen_cp')})")
+            parts.append(f"delta_cp={meta.get('delta_cp')}")
+            parts.append(f"feat={'C' if is_cap else '-'}{'K' if is_chk else '-'}{'O' if is_cas else '-'}")
+            node.comment = " | ".join(str(p) for p in parts)
+
+            ply += 1
+
+    # stamp result and save
+    result = board.result(claim_draw=True)
+    game.headers["Result"] = result
+    out = save_pgn(game, name_prefix="tier2_selfplay")
+    log.info("Finished self-play: result=%s pgn=%s", result, out)
+    return str(out)
 
 def choose_move_with_style(board: chess.Board, eng: Engine, depth: int, style: str, k: int = 4) -> tuple[chess.Move, dict]:
     """

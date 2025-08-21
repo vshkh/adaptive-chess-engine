@@ -5,10 +5,15 @@ import matplotlib.pyplot as plt
 import collections
 import logging
 import statistics as st
+from src.ace.game import play_self
 
 # Constants for PGN comment parsing
 REQ_KEYS = {"style", "best", "chosen"}
 PAIR_KEYS = [("best", "best_cp"), ("chosen", "chosen_cp")]
+
+def _pct(x, n):
+    """Helper to calculate percentage."""
+    return 0.0 if n == 0 else 100.0 * x / n
 
 def load_game(path):
     with open(path, "r") as f:
@@ -61,7 +66,7 @@ def plot_eval_curve(evals: list[int], title="Evaluation Curve"):
     plt.title(title)
     plt.xlabel("Move")
     plt.ylabel("Eval (centipawns)")
-    plt.grid(True, linestyle='--', alpha=0.6)
+    plt.grid(True, linestyle="--", alpha=0.6)
     plt.show()
 
 def plot_histogram_deltas(game: chess.pgn.Game, title="Move Quality Histogram"):
@@ -129,18 +134,16 @@ def summarize_game(game: chess.pgn.Game) -> dict:
             
         if (style := data.get("style")):
             styles[style] += 1
-            
-    def pct(x, n): return 0.0 if n == 0 else 100.0 * x / n
     
     return {
         "result": game.headers.get("Result", "*"),
         "plies": plies,
-        "captures_pct": round(pct(caps, plies), 1),
-        "checks_pct": round(pct(chks, plies), 1),
-        "castles_pct": round(pct(cas, plies), 1),
+        "captures_pct": round(_pct(caps, plies), 1),
+        "checks_pct": round(_pct(chks, plies), 1),
+        "castles_pct": round(_pct(cas, plies), 1),
         "delta_avg": (round(st.mean(deltas), 1) if deltas else None),
         "delta_std": (round(st.pstdev(deltas), 1) if len(deltas) > 1 else None),
-        "engine_agreement_pct": round(pct(agree, plies), 1),
+        "engine_agreement_pct": round(_pct(agree, plies), 1),
         "styles_counts": dict(styles),
     }
 
@@ -173,9 +176,40 @@ def plot_outcomes(counts, title="Results Distribution"):
     plt.ylabel("Count")
     plt.show()
 
-def batch_selfplay(n_games: int, depth: int, max_moves: int):
+def batch_selfplay(n_games: int, depth: int, max_moves: int, style_white: str, style_black: str) -> list[str]:
     """Run several selfplay games and return list of PGN paths"""
-    # from here we need to import play_self which is in a parent directory
-    # from ..scripts.play_self import play_self  # this does not work
-    # import os # walk up the tree until you find play_self
-    return []
+    pgn_paths = []
+    for i in range(n_games):
+        print(f"--- Playing game {i+1}/{n_games} ---")
+        pgn_path = play_self(
+            depth_white=depth,
+            depth_black=depth,
+            max_moves=max_moves,
+            style_white=style_white,
+            style_black=style_black,
+        )
+        pgn_paths.append(pgn_path)
+    return pgn_paths
+
+def analyze_batch(pgn_paths: list[str]):
+    """Analyzes a batch of games and prints a summary of the results."""
+    print("\n--- Batch Analysis ---")
+    
+    # Outcome distribution
+    counts = outcome_counts(pgn_paths)
+    print("\n--- Outcome Distribution ---")
+    # sort counts by key
+    sorted_counts = collections.OrderedDict(sorted(counts.items()))
+    for result, count in sorted_counts.items():
+        print(f"{result}: {count}")
+    
+    plot_outcomes(counts, title=f"{len(pgn_paths)} games batch result")
+
+    # Aggregate summaries
+    all_summaries = [summarize_game(load_game(p)) for p in pgn_paths]
+    
+    # Example of further analysis: average engine agreement
+    agreement_scores = [s['engine_agreement_pct'] for s in all_summaries if s['engine_agreement_pct'] is not None]
+    if agreement_scores:
+        avg_agreement = st.mean(agreement_scores)
+        print(f"\nAverage Engine Agreement: {avg_agreement:.2f}%")
