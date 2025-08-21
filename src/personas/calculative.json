@@ -1,0 +1,8 @@
+{
+  "description": "A cautious, precise player that plays at maximum strength and avoids volatility.",
+  "uci_options": {
+    "UCI_LimitStrength": false,
+    "Skill Level": 20
+  },
+  "move_selection_style": "calculative"
+}

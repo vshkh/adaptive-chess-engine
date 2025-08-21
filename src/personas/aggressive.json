@@ -1,0 +1,8 @@
+{
+  "description": "An aggressive, tactical player that seeks complications and avoids draws.",
+  "uci_options": {
+    "UCI_LimitStrength": true,
+    "UCI_Elo": 2800
+  },
+  "move_selection_style": "aggressive"
+}

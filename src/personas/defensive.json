@@ -1,0 +1,8 @@
+{
+  "description": "A solid, defensive player that prioritizes king safety and avoids risky lines.",
+  "uci_options": {
+    "UCI_LimitStrength": true,
+    "UCI_Elo": 2600
+  },
+  "move_selection_style": "defensive"
+}

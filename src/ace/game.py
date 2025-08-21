@@ -54,23 +54,26 @@ def _format_pv(pv: list[chess.Move], limit: int = 6) -> str:
     return " ".join(str(m) for m in pv[:limit])
 
 def play_self(depth_white: int = 12, depth_black: int = 12, max_moves: int = 300,
-              style_white: str = "pure", style_black: str = "pure") -> str:
+              persona_white: str | None = None, persona_black: str | None = None) -> str:
     """Play a game with optional personalities; returns PGN filepath."""
     board = chess.Board()
     game = chess.pgn.Game()
     game.headers["Event"] = "ACE Self-Play"
     game.headers["Site"] = "Local"
-    game.headers["White"] = f"Stockfish(d{depth_white}, {style_white})"
-    game.headers["Black"] = f"Stockfish(d{depth_black}, {style_black})"
+    game.headers["White"] = f"Stockfish(d{depth_white}, {persona_white or 'pure'})"
+    game.headers["Black"] = f"Stockfish(d{depth_black}, {persona_black or 'pure'})"
 
     node = game
-    with Engine() as eng_w, Engine() as eng_b:
-        ply = 0  # <-- you were missing this
+    with Engine(persona_name=persona_white) as eng_w, Engine(persona_name=persona_black) as eng_b:
+        ply = 0
         while not board.is_game_over(claim_draw=True) and ply < max_moves:
             if board.turn == chess.WHITE:
-                eng, depth, style = eng_w, depth_white, style_white
+                eng, depth = eng_w, depth_white
             else:
-                eng, depth, style = eng_b, depth_black, style_black
+                eng, depth = eng_b, depth_black
+
+            # Get the move selection style from the engine's loaded persona
+            style = eng.move_selection_style
 
             # choose move + metadata (has chosen_cp/best_cp)
             move, meta = choose_move_with_style(board, eng, depth=depth, style=style, k=4)

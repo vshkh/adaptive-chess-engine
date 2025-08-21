@@ -5,6 +5,10 @@ import matplotlib.pyplot as plt
 import collections
 import logging
 import statistics as st
+import itertools
+import pandas as pd
+from pathlib import Path
+from typing import List
 from src.ace.game import play_self
 
 # Constants for PGN comment parsing
@@ -176,20 +180,73 @@ def plot_outcomes(counts, title="Results Distribution"):
     plt.ylabel("Count")
     plt.show()
 
-def batch_selfplay(n_games: int, depth: int, max_moves: int, style_white: str, style_black: str) -> list[str]:
+def run_matchup(n_games: int, depth: int, max_moves: int, persona_white: str, persona_black: str) -> list[str]:
     """Run several selfplay games and return list of PGN paths"""
     pgn_paths = []
     for i in range(n_games):
-        print(f"--- Playing game {i+1}/{n_games} ---")
+        print(f"--- Playing game {i+1}/{n_games} ({persona_white} vs {persona_black}) ---")
         pgn_path = play_self(
             depth_white=depth,
             depth_black=depth,
             max_moves=max_moves,
-            style_white=style_white,
-            style_black=style_black,
+            persona_white=persona_white,
+            persona_black=persona_black,
         )
         pgn_paths.append(pgn_path)
     return pgn_paths
+
+def run_tournament(personas: list[str], games_per_matchup: int, depth: int, max_moves: int) -> list[str]:
+    """Runs a round-robin tournament between all specified personas."""
+    all_pgn_paths = []
+    matchups = list(itertools.permutations(personas, 2))
+    print(f"Starting tournament with {len(personas)} personas and {len(matchups)} matchups.")
+    
+    for p_w, p_b in matchups:
+        pgn_paths = run_matchup(
+            n_games=games_per_matchup,
+            depth=depth,
+            max_moves=max_moves,
+            persona_white=p_w,
+            persona_black=p_b,
+        )
+        all_pgn_paths.extend(pgn_paths)
+        
+    print(f"\n--- Tournament Finished: {len(all_pgn_paths)} games played ---")
+    return all_pgn_paths
+
+def generate_crosstable(pgn_paths: List[str], personas: List[str]):
+    """Generates and prints a crosstable of results from a list of PGN files."""
+    df = pd.DataFrame(0.0, index=personas, columns=personas)
+
+    for pgn_path in pgn_paths:
+        game = load_game(pgn_path)
+        white_header = game.headers.get("White", "")
+        black_header = game.headers.get("Black", "")
+        result = game.headers.get("Result", "*")
+
+        try:
+            white_persona = re.search(r", (.*?)\)", white_header).group(1)
+            black_persona = re.search(r", (.*?)\)", black_header).group(1)
+        except AttributeError:
+            continue # Skip if persona not found in header
+
+        if white_persona not in df.index or black_persona not in df.columns:
+            continue # Skip if persona from PGN is not in the official list
+
+        if result == "1-0":
+            df.loc[white_persona, black_persona] += 1.0
+        elif result == "0-1":
+            # This was the bug: it should be black scoring against white
+            df.loc[black_persona, white_persona] += 1.0
+        elif result == "1/2-1/2":
+            # Corrected logic: only add 0.5 to each player's score against the other
+            df.loc[white_persona, black_persona] += 0.5
+            df.loc[black_persona, white_persona] += 0.5
+
+    # Add a total score column
+    df["Total"] = df.sum(axis=1)
+    print("\n--- Tournament Crosstable ---")
+    print(df)
 
 def analyze_batch(pgn_paths: list[str]):
     """Analyzes a batch of games and prints a summary of the results."""

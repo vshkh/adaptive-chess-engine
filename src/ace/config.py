@@ -18,6 +18,7 @@ class Paths:
     root: Path = Path(__file__).resolve().parents[2]
     logs: Path = root / "logs"
     data: Path = root / "data"
+    personas: Path = root / "src" / "personas"
 
 CFG = EngineConfig()
 PATHS = Paths()

@@ -1,0 +1,8 @@
+{
+  "description": "A creative and unpredictable player that enjoys trying different moves, not always the 'best' ones.",
+  "uci_options": {
+    "UCI_LimitStrength": true,
+    "UCI_Elo": 2700
+  },
+  "move_selection_style": "random"
+}

@@ -1,0 +1,8 @@
+{
+  "description": "A purely random player that chooses from a set of good moves without much regard for the top choice.",
+  "uci_options": {
+    "UCI_LimitStrength": true,
+    "UCI_Elo": 1800
+  },
+  "move_selection_style": "random"
+}

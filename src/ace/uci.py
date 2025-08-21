@@ -9,9 +9,10 @@ UCI - Universal Chess Interface
 from __future__ import annotations
 import contextlib
 from dataclasses import dataclass
+import json
 import chess
 import chess.engine
-from .config import CFG
+from .config import CFG, PATHS
 from .logging_setup import setup_logging
 from typing import List, Tuple, Optional
 
@@ -39,18 +40,41 @@ class Candidate:
     is_castle: bool
 
 class Engine:
-    def __init__(self, exe_path: str | None = None):
+    def __init__(self, exe_path: str | None = None, persona_name: str | None = None):
         path = str(CFG.stockfish_path if exe_path is None else exe_path)
         log.info("Launching Stockfish: %s", path)
         self._engine = chess.engine.SimpleEngine.popen_uci(path)
+        
+        self.persona = None
+        if persona_name:
+            persona_path = PATHS.personas / f"{persona_name}.json"
+            if persona_path.exists():
+                log.info("Loading persona: %s", persona_path)
+                with open(persona_path, "r") as f:
+                    self.persona = json.load(f)
+            else:
+                log.warning("Persona file not found: %s", persona_path)
+
         self._set_options()
 
+    @property
+    def move_selection_style(self) -> str:
+        if self.persona and "move_selection_style" in self.persona:
+            return self.persona["move_selection_style"]
+        return "pure"
+
     def _set_options(self):
+        # Start with base options
         opts = {
             "Skill Level": CFG.skill_level,
             "Threads": CFG.threads,
             "Hash": CFG.hash_mb,
         }
+        # Override with persona options if they exist
+        if self.persona and "uci_options" in self.persona:
+            opts.update(self.persona["uci_options"])
+
+        log.info("Configuring engine with options: %s", opts)
         for k, v in opts.items():
             try:
                 self._engine.configure({k: v})

@@ -1,5 +1,7 @@
 import argparse
 import json
+import glob
+from pathlib import Path
 from src.ace.analysis import (
     load_game,
     extract_eval_curve,
@@ -8,6 +10,7 @@ from src.ace.analysis import (
     check_game,
     summarize_game,
     analyze_move_agreement,
+    generate_crosstable
 )
 
 def main():
@@ -30,8 +33,26 @@ def main():
     parser_agreement = subparsers.add_parser("agreement", help="Analyze move agreement in a PGN file.")
     parser_agreement.add_argument("pgn_path", help="Path to the PGN file.")
 
+    # 'crosstable' command
+    parser_crosstable = subparsers.add_parser("crosstable", help="Generate a crosstable from a batch of PGNs.")
+    parser_crosstable.add_argument("pgn_glob", help="Glob pattern to find PGN files (e.g., 'data/*.pgn').")
+
     args = parser.parse_args()
 
+    if args.command == "crosstable":
+        pgn_paths = glob.glob(args.pgn_glob)
+        if not pgn_paths:
+            print(f"No PGN files found matching pattern: {args.pgn_glob}")
+            return
+        
+        # Discover personas from the personas directory
+        persona_dir = Path(__file__).resolve().parents[1] / "src" / "personas"
+        personas = [p.stem for p in persona_dir.glob("*.json")]
+        
+        generate_crosstable(pgn_paths, personas)
+        return
+
+    # Commands that operate on a single game
     game = load_game(args.pgn_path)
 
     if args.command == "plot":
